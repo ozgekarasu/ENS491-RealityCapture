@@ -1,0 +1,66 @@
+import cv2
+import numpy as np
+import random
+import time
+
+# Define the parameters for pattern detection
+min_pattern_size = 3  # Minimum pattern size to consider
+max_pattern_size = 10  # Maximum pattern size to consider
+num_samples = 10  # Number of frames to sample from the video
+timeout = 5  # Timeout in seconds
+
+# Load the video
+cap = cv2.VideoCapture(r"C:\Users\ipekd\ENS491-RealityCapture\traffic_2 - Made with Clipchamp.mp4")
+
+# Get the total number of frames in the video
+total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+# Randomly select frames for sampling
+sampled_frames = random.sample(range(total_frames), num_samples)
+
+# Iterate over different pattern sizes
+start_time = time.time()
+for rows in range(min_pattern_size, max_pattern_size + 1):
+    for cols in range(min_pattern_size, max_pattern_size + 1):
+        # Prepare object points (known 3D coordinates of the calibration pattern corners)
+        objp = np.zeros((rows * cols, 3), dtype=np.float32)
+        objp[:, :2] = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2)
+
+        # Arrays to store object points and image points from the sampled frames
+        obj_points = []
+        img_points = []
+
+        # Capture sampled frames and detect pattern corners
+        for frame_idx in sampled_frames:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # Convert frame to grayscale
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # Find pattern corners
+            found, corners = cv2.findChessboardCorners(gray, (cols, rows), None)
+
+            if found:
+                # Add object points and image points
+                obj_points.append(objp)
+                img_points.append(corners)
+
+            # Check if timeout has been reached
+            if time.time() - start_time >= timeout:
+                break
+
+        # Check if corners were detected for the current pattern size
+        if len(obj_points) > 0:
+            # Print the pattern size
+            print("Pattern Size: {} x {}".format(cols, rows))
+            break
+
+    if len(obj_points) > 0:
+        break
+
+# Release the video capture object
+cap.release()
+cv2.destroyAllWindows()
