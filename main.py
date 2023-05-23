@@ -1,22 +1,14 @@
 import cv2
 import numpy as np
 import open3d as o3d
-from scipy.ndimage import uniform_filter1d
+from scipy.ndimage.filters import uniform_filter
 
 # Load the video and get the first frame
 cap = cv2.VideoCapture(r"C:\Users\ipekd\ENS491-RealityCapture\traffic_2 - Made with Clipchamp.mp4")
 ret, frame1 = cap.read()
 
-# Define the termination criteria for the feature detection
-feature_params = dict(maxCorners=200,  # Increased the number of corners to 200
-                      qualityLevel=0.3,
-                      minDistance=7,
-                      blockSize=7)
-
-# Define the parameters for optical flow calculation
-lk_params = dict(winSize=(15, 15),
-                 maxLevel=2,
-                 criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+# Create a FAST feature detector
+fast = cv2.FastFeatureDetector_create(threshold=20, nonmaxSuppression=True)
 
 # Create some empty arrays to store the points and their corresponding depth
 p1 = np.empty((0, 2))
@@ -35,27 +27,32 @@ while cap.isOpened():
     gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
 
-    # Detect good features to track in the first frame
-    p_0 = cv2.goodFeaturesToTrack(gray1, mask=None, **feature_params)
+    # Detect keypoints using FAST in the first frame
+    keypoints_1 = fast.detect(gray1, None)
+
+    # Extract the keypoint locations
+    p_0 = np.array([kp.pt for kp in keypoints_1], dtype=np.float32)
 
     # Calculate the optical flow between the first and second frames
-    p_1, st, err = cv2.calcOpticalFlowPyrLK(gray1, gray2, p_0, None, **lk_params)
+    p_1, st, err = cv2.calcOpticalFlowPyrLK(gray1, gray2, p_0, None)
 
     # Select only good points
-    good_new = p_1[st == 1]
-    good_old = p_0[st == 1]
+    good_new = p_1[st[:, 0] == 1]
+    good_old = p_0[st[:, 0] == 1]
 
     # Calculate the depth of each point based on the motion of the camera
     depth = np.abs(good_new - good_old)
 
     # Apply a moving average filter to the depth estimates
     window_size = 3  # or whatever window size you want
-    depth = uniform_filter1d(depth, size=window_size, mode='reflect')
+    depth = uniform_filter(depth, size=window_size, mode='reflect')
 
     # Append the good points and their depth to the arrays
-    p2 = np.vstack([p2, good_new])
-    p1 = np.vstack([p1, good_old])
+    p2 = np.vstack([p2, good_new.reshape(-1, 2)])
+    p1 = np.vstack([p1, good_old.reshape(-1, 2)])
     depths = np.append(depths, np.full((good_new.shape[0],), depth[:, 0].mean()))
+
+
 
     # Set the first frame to be the second frame for the next iteration
     frame1 = frame2.copy()
@@ -69,7 +66,7 @@ while cap.isOpened():
 
             # Draw the depth value next to the point
             depth = depths[i]
-            cv2.putText(frame1, f'depth: {depth}', (point[0] + 5, point[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 1,
+            cv2.putText(frame1, f'depth: {depth:.2f}', (point[0] + 5, point[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 1,
                         (0, 0, 255), 2, cv2.LINE_AA)
 
         # Resize and show the frame
